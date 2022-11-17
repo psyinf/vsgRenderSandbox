@@ -1,12 +1,11 @@
 cmake_minimum_required(VERSION 3.7)
 
-project(MyFirstVsgApplication
+project(vsgRenderSandBox
         VERSION 0.0.0
         DESCRIPTION "Template of how to create a program using VulkanSceneGraph and CMake"
         LANGUAGES CXX
 )
-
-# build all examples into the bin directory
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
 
 # Change the default build type to Release
@@ -20,32 +19,8 @@ if (VULKAN_SDK)
 endif()
 
 find_package(vsg 1.0.0 REQUIRED)
-
-# find the optional vsgXchange that can be used for reading and range of image and 3d model formats and shader compilation
 find_package(vsgXchange 1.0.0 QUIET)
 
-# set the use of C++17 globally as all examples require it
-set(CMAKE_CXX_STANDARD 17)
 
-# add clobber build target to clear all the non git registered files/directories
-add_custom_target(clobber
-    COMMAND git clean -d -f -x
-)
-
-set(SOURCES
-    src/main.cpp
-)
-
-add_executable(myfirstvsgapplication ${SOURCES})
-
-target_link_libraries(myfirstvsgapplication vsg::vsg)
-
-if (vsgXchange_FOUND)
-    target_compile_definitions(myfirstvsgapplication PRIVATE vsgXchange_FOUND)
-    target_link_libraries(myfirstvsgapplication vsgXchange::vsgXchange)
-endif()
-
-install(TARGETS myfirstvsgapplication
-        RUNTIME DESTINATION bin
-)
-
+add_subdirectory(src/sample)
+add_subdirectory(src/renderHead)
