@@ -8,16 +8,17 @@
 #include <random>
 #include <ranges>
 
+
 /**
  * Class to aggregate the scene-root, camera and auxiliary items.
  * Long term idea is to have an interface to create, update and delete scene items via external drivers.
  */
 
-class Object : public vsg::Inherit<vsg::MatrixTransform, Object>
+class SceneObject : public vsg::Inherit<vsg::MatrixTransform, SceneObject>
 {
 
 public:
-    Object()
+    SceneObject()
     {
         std::random_device                    rd;
         std::default_random_engine            eng(rd());
@@ -39,6 +40,37 @@ public:
 
 private:
     vsg::vec3 position;
+};
+class UpdateScene : public vsg::Inherit<vsg::Visitor, UpdateScene>
+{
+public:
+    UpdateScene(vsg::ref_ptr<vsg::Group> root)
+        : root(root)
+    {
+    }
+    
+    void apply(vsg::Object& object) override
+    {
+        object.traverse(*this);
+    }
+
+    void apply(vsg::MatrixTransform& mt) override
+    {
+        auto so = mt.cast<SceneObject>();
+        if (so)
+        {
+            so->update();
+        }
+    }
+
+    void apply(vsg::FrameEvent& frame)
+    {
+        if (root)
+            root->accept(*this);
+    }
+
+private:
+    vsg::ref_ptr<vsg::Group> root;
 };
 
 class ViewerCore
@@ -89,8 +121,9 @@ public:
     {
         for (auto i : std::ranges::iota_view(1, 10))
         {
-            sceneRoot->addChild(Object::create());
+            sceneRoot->addChild(SceneObject::create());
         }
+        viewer->addEventHandler(UpdateScene::create(sceneRoot));
     }
 
     void firstFrame()
@@ -119,6 +152,8 @@ public:
     {
         while (viewer->advanceToNextFrame())
         {
+
+
             frame();
         }
     }
