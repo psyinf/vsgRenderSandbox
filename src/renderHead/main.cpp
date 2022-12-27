@@ -5,12 +5,45 @@
 #endif
 
 #include <iostream>
+#include <random>
+#include <ranges>
 
+/**
+ * Class to aggregate the scene-root, camera and auxiliary items.
+ * Long term idea is to have an interface to create, update and delete scene items via external drivers.
+ */
+
+class Object : public vsg::Inherit<vsg::MatrixTransform, Object>
+{
+
+public:
+    Object()
+    {
+        std::random_device                    rd;
+        std::default_random_engine            eng(rd());
+        std::uniform_real_distribution<float> distr(-10.0, 10.0);
+
+        position            = {distr(eng), distr(eng), distr(eng)};
+        static auto builder = vsg::Builder::create();
+        static auto options = vsg::Options::create();
+        builder->options    = options;
+        this->addChild(builder->createCone());
+        update();
+    }
+
+    void update()
+    {
+        position += {0, 0, 0.01f};
+        this->matrix = vsg::translate(position);
+    }
+
+private:
+    vsg::vec3 position;
+};
 
 class ViewerCore
 {
 public:
-  
     void setup()
     {
         options->paths         = {R"(e:\develop\install\vsgRenderSandbox\bin\data\)"};
@@ -28,7 +61,7 @@ public:
         }
 
         viewer->addWindow(window);
-      
+
 
         // set up the camera
         /*
@@ -43,24 +76,25 @@ public:
         auto  lookAt = vsg::LookAt::create(centre + vsg::dvec3(0.0, -radius * 3.5, 0.0), centre, vsg::dvec3(0.0, 0.0, 1.0));
 
         vsg::ref_ptr<vsg::ProjectionMatrix> perspective;
-        perspective = vsg::Perspective::create(30.0, static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height), /*nearfar ratio*/0.00001 * radius, radius * 4.5);
+        perspective = vsg::Perspective::create(30.0, static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height), /*nearfar ratio*/ 0.00001 * radius, radius * 4.5);
 
         camera = vsg::Camera::create(perspective, lookAt, vsg::ViewportState::create(window->extent2D()));
         // add close handler to respond to pressing the window close window button and pressing escape
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
         // add a trackball event handler to control the camera view use the mouse
         viewer->addEventHandler(vsg::Trackball::create(camera));
-        
     }
 
     void createDebugScene()
     {
-        auto builder     = vsg::Builder::create();
-        builder->options = options;
-        sceneRoot->addChild(builder->createCone());
+        for (auto i : std::ranges::iota_view(1, 10))
+        {
+            sceneRoot->addChild(Object::create());
+        }
     }
 
-    void firstFrame() {
+    void firstFrame()
+    {
         // create a command graph to render the scene on specified window
         auto commandGraph = vsg::createCommandGraphForView(viewer->windows().front(), camera, sceneRoot);
         viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
