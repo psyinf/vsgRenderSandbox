@@ -5,7 +5,10 @@ class VsgSandbox(ConanFile):
     name = "VsgSandbox"
     version = "0.1"
     settings = "os", "compiler", "build_type", "arch"
-    requires = [("vsg/1.0.0")
+    requires = [ ("vsg/1.0.0")
+                ,("modern-cpp-kafka/2022.12.07")
+                ,("nlohmann_json/3.11.2")
+
                 ]
     generators = "cmake_find_package_multi"
     

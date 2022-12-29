@@ -4,37 +4,95 @@
 #include <vsgXchange/all.h>
 #endif
 
+#include <future>
 #include <iostream>
+#include <kafka/KafkaConsumer.h>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <ranges>
-
+using namespace kafka;
+using namespace kafka::clients;
+using namespace kafka::clients::consumer;
 
 /**
  * Class to aggregate the scene-root, camera and auxiliary items.
  * Long term idea is to have an interface to create, update and delete scene items via external drivers.
  */
+const Properties props({
+    {"bootstrap.servers", {"127.0.0.1:9092"}},
+    {"enable.idempotence", {"true"}},
+});
+class UpdateStream
+{
+public:
+    const std::string topic = "test";
+
+    KafkaConsumer consumer = KafkaConsumer(props);
+    bool          debug    = true;
+
+    std::vector<ConsumerRecord> back_buffer;
+
+    UpdateStream()
+    {
+        // Subscribe to topics
+        consumer.subscribe({topic});
+    }
+    void swap(std::vector<ConsumerRecord>& target)
+    {
+        std::swap(target, back_buffer);
+    }
+
+
+    void run()
+    {
+        while (true)
+        {
+            auto records = consumer.poll(std::chrono::milliseconds(10));
+            for (const auto& record : records)
+            {
+                // TODO: use dedicated message type here
+                // In this example, quit on empty message
+                if (record.value().size() == 0)
+                {
+                    std::cerr << "Quit due to empty message" << std::endl;
+                    return;
+                }
+
+
+                if (!record.error())
+                {
+                    if (debug)
+                    {
+                        std::cout << "% Got a new message..." << std::endl;
+                        std::cout << "    Topic    : " << record.topic() << std::endl;
+                        std::cout << "    Partition: " << record.partition() << std::endl;
+                        std::cout << "    Offset   : " << record.offset() << std::endl;
+                        std::cout << "    Timestamp: " << record.timestamp().toString() << std::endl;
+                        std::cout << "    Headers  : " << toString(record.headers()) << std::endl;
+                        std::cout << "    Key   [" << record.key().toString() << "]" << std::endl;
+                        std::cout << "    Value [" << record.value().toString() << "]" << std::endl;
+                    }
+                    back_buffer.emplace_back(record);
+                }
+                else if (record.error())
+                {
+                    std::cerr << record.toString() << std::endl;
+                }
+            }
+        }
+    }
+};
+
 
 class SceneObject : public vsg::Inherit<vsg::MatrixTransform, SceneObject>
 {
 
 public:
-    SceneObject()
-    {
-        std::random_device                    rd;
-        std::default_random_engine            eng(rd());
-        std::uniform_real_distribution<float> distr(-10.0, 10.0);
+    SceneObject() = default;
 
-        position            = {distr(eng), distr(eng), distr(eng)};
-        static auto builder = vsg::Builder::create();
-        static auto options = vsg::Options::create();
-        builder->options    = options;
-        this->addChild(builder->createCone());
-        update();
-    }
-
-    void update()
+    void update(vsg::vec3 pos)
     {
-        position += {0, 0, 0.01f};
+        position     = pos;
         this->matrix = vsg::translate(position);
     }
 
@@ -43,12 +101,22 @@ private:
 };
 class UpdateScene : public vsg::Inherit<vsg::Visitor, UpdateScene>
 {
+    
+
+
+
 public:
+    //TODO: compile dynamically
+    vsg::ref_ptr<vsg::Node> cone;
+
     UpdateScene(vsg::ref_ptr<vsg::Group> root)
         : root(root)
     {
-    }
     
+       
+        
+    }
+
     void apply(vsg::Object& object) override
     {
         object.traverse(*this);
@@ -59,22 +127,73 @@ public:
         auto so = mt.cast<SceneObject>();
         if (so)
         {
-            so->update();
+            //    so->update();
         }
     }
 
     void apply(vsg::FrameEvent& frame)
     {
+
+        std::vector<ConsumerRecord> frame_records;
+
+        us.swap(frame_records);
+        std::cout << frame_records.size() << std::endl;
+        //
+        for (const auto& record : frame_records)
+        {
+            std::string    object_key = (record.key().toString());
+            nlohmann::json j          = nlohmann::json::parse(record.value().toString());
+
+            // extract spatial
+            auto      x = j["spatial"]["pos"];
+            vsg::vec3 v(x[0], x[1], x[2]);
+
+            // check if we need to create it
+            if (!objects.contains(object_key))
+            {
+                auto new_object = SceneObject::create();
+                // gizmo
+
+
+                new_object->addChild(cone);
+                // TODO: determine root
+                auto parent = object_key.substr(0, object_key.find_last_of("."));
+                vsg::ref_ptr<vsg::Group> attachment_point;
+                if (parent == object_key)
+                {
+                    attachment_point = root;
+                }
+                else
+                {
+                    attachment_point = objects.at(parent);
+                }
+                attachment_point->addChild(new_object);
+
+                objects.insert({object_key, new_object});
+            }
+            // update
+            objects.at(object_key)->update(v);
+
+            // TODO: remove the need to use toString
+        }
+
+
         if (root)
+
             root->accept(*this);
     }
 
 private:
-    vsg::ref_ptr<vsg::Group> root;
+    vsg::ref_ptr<vsg::Group>                         root;
+    UpdateStream                                     us;
+    std::jthread                                     updateThread = std::jthread{&UpdateStream::run, &us};
+    std::map<std::string, vsg::ref_ptr<SceneObject>> objects;
 };
 
 class ViewerCore
 {
+
+
 public:
     void setup()
     {
@@ -115,15 +234,20 @@ public:
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
         // add a trackball event handler to control the camera view use the mouse
         viewer->addEventHandler(vsg::Trackball::create(camera));
+
+        auto builder     = vsg::Builder::create();
+        builder->options = options;
+        cone             = builder->createCone();
     }
 
     void createDebugScene()
     {
-        for (auto i : std::ranges::iota_view(1, 10))
-        {
-            sceneRoot->addChild(SceneObject::create());
-        }
-        viewer->addEventHandler(UpdateScene::create(sceneRoot));
+        auto obj = SceneObject::create();
+        obj->addChild(cone);
+        sceneRoot->addChild(obj);
+       
+        updater->cone = cone;
+        viewer->addEventHandler(updater);
     }
 
     void firstFrame()
@@ -150,10 +274,9 @@ public:
 
     void run()
     {
+
         while (viewer->advanceToNextFrame())
         {
-
-
             frame();
         }
     }
@@ -162,6 +285,8 @@ private:
     vsg::ref_ptr<vsg::Viewer>  viewer    = vsg::Viewer::create();
     vsg::ref_ptr<vsg::Options> options   = vsg::Options::create();
     vsg::ref_ptr<vsg::Group>   sceneRoot = vsg::Group::create();
+    vsg::ref_ptr<UpdateScene>  updater   = UpdateScene::create(sceneRoot);
+    vsg::ref_ptr<vsg::Node>  cone;
     vsg::ref_ptr<vsg::Camera>  camera;
 };
 
