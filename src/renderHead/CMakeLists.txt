@@ -1,7 +1,10 @@
 SET(APP_NAME renderHead)
-
+file(GLOB HEADER_FILES 	CONFIGURE_DEPENDS "*.h")
+file(GLOB CPP_FILES 	CONFIGURE_DEPENDS "*.cpp")
 set(SOURCES
     main.cpp
+	${HEADER_FILES}
+	${CPP_FILES}
 )
 
 find_package(vsg 1.0.0 REQUIRED)
