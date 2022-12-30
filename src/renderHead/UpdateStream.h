@@ -18,7 +18,7 @@ public:
     const std::string topic = "test";
 
     KafkaConsumer consumer = KafkaConsumer(props);
-    bool          debug    = true;
+    bool          debug    = false;
 
     std::vector<ConsumerRecord> back_buffer;
 

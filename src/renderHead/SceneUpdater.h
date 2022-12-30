@@ -36,7 +36,7 @@ public:
         std::vector<ConsumerRecord> frame_records;
 
         us.swap(frame_records);
-        std::cout << frame_records.size() << std::endl;
+        //std::cout << frame_records.size() << std::endl;
         //
         for (const auto& record : frame_records)
         {
